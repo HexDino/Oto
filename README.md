@@ -141,7 +141,7 @@ WorkBuddy không có API công khai để một extension Chrome gọi vào. Ba 
 | API OpenAI-compatible trong Cài đặt | Có | Có (tới endpoint bạn chọn) | Dùng được Ollama/LM Studio local → vẫn offline |
 | WorkBuddy cloud-service | Có | Có | Phải deploy một service nhỏ, quá tay cho việc này |
 
-### 6.3 Claude Haiku 5.5 + Agent điều khiển tab
+### 6.3 Claude 2 tầng (Haiku 5.5 + Sonnet 5.5) + Agent điều khiển tab
 
 **Cấu hình** — file `config.local.js` ở gốc extension (copy từ `config.example.js`):
 
@@ -149,22 +149,27 @@ WorkBuddy không có API công khai để một extension Chrome gọi vào. Ba 
 self.ECO_CONFIG = {
   claude: {
     baseUrl: 'https://api.anthropic.com',
-    model: 'claude-haiku-5-5',
     apiVersion: '2023-06-01',
-    maxTokens: 400,
+    maxTokens: 900,
+    models: { fast: 'claude-haiku-5-5', smart: 'claude-sonnet-5-5' },
     keys: ['sk-ant-...', 'sk-ant-...']   // xoay vòng khi key trước lỗi 401/429/5xx
   }
 };
 ```
 
-Background nạp file này bằng `importScripts`, giữ key trong service worker — key **không** lọt vào content script hay trang web. Nếu key #1 lỗi 401/403/429/5xx thì tự thử key #2, key thành công được ghi nhớ cho lần sau.
+**Định tuyến model** (`content/30-quiz.js`):
 
-Hai chi tiết bắt buộc khi gọi từ extension (đã xử lý trong code):
+| Tình huống | Model | Vì sao |
+|---|---|---|
+| Câu hỏi chỉ có chữ | `fast` — Haiku 5.5 | rẻ, đủ dùng cho luật học thuộc |
+| Khối câu hỏi có ảnh ≥ 100×70 | `smart` — Sonnet 5.5 + gửi ảnh | Haiku không đọc được biển báo |
+| `fast` trả confidence < ngưỡng (mặc định 70) | hỏi lại `smart` | câu khó thì nâng cấp |
 
-- Header `anthropic-dangerous-direct-browser-access: true` — thiếu là 401 `CORS requests must set ...`.
-- **Không gửi `temperature`** — Haiku 5.5 đã bỏ tham số này, gửi vào là 400.
+Đổi model chỉ cần sửa `models` trong `config.local.js`, không phải sửa code.
 
-**Kiểm tra**: popup → tab Cài đặt → **Test Claude**. Kết quả mẫu: `OK · claude-haiku-5-5 · 1240ms · đáp án A (98%)`.
+**Vision**: ảnh trong khối câu hỏi được vẽ lại qua canvas (thu về tối đa 1024px, JPEG 85%) rồi gửi thành `image` block base64. Ảnh khác origin (canvas bị taint) thì bỏ ảnh, chỉ gửi chữ — không lỗi.
+
+**Kiểm tra**: popup → Cài đặt → **Test Claude**. Kết quả mẫu: `OK · claude-haiku-5-5 · 1240ms · đáp án A (98%)`.
 
 **Agent mode** (popup → Điều khiển → "Agent tự trả lời"):
 
@@ -176,11 +181,9 @@ Hai chi tiết bắt buộc khi gọi từ extension (đã xử lý trong code):
 
 Vòng lặp chạy mỗi `agentIntervalMs` (mặc định 1500ms), mỗi câu hỏi chỉ xử lý một lần (khoá theo `signature`), dừng khi tắt agent hoặc đạt `agentMaxSteps`.
 
-Agent **không tự nộp bài** và **không lách** camera/inactivity. Nộp bài là việc của bạn.
+Agent **không tự nộp bài** và **không lách** camera/inactivity.
 
-**Đã test**: trang quiz giả lập gắn vào đúng domain → Claude trả `B (97%)` → extension tick đúng ô B, HUD hiện `Tự chọn B · Agent đang chạy · auto`.
-
-> **Chưa kiểm chứng được phần quiz**: tài khoản hiện tại chỉ có 1 khóa (Đạo đức người lái xe) với slide PDF/YouTube, không có slide trắc nghiệm. Phần đọc câu hỏi dùng heuristic chung (radio group + fallback theo class), sẽ cần chỉnh khi gặp slide quiz thật.
+**Đã test**: trang quiz giả lập gắn vào đúng domain → Claude trả `B (97%)` → extension tick đúng ô B. Gọi thẳng API từ extension: `smart` trả về `claude-sonnet-5-5` kèm ảnh (4.1s), `fast` trả `claude-haiku-5-5` (1.2s).
 
 ### 6.4 Watchdog hiện diện (không phải auto-scroll)
 

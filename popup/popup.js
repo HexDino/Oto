@@ -51,6 +51,8 @@ async function init() {
   $('autoSelectThreshold').value = settings.autoSelectThreshold;
   $('thresholdValue').textContent = settings.autoSelectThreshold;
   $('agentMode').value = settings.agentMode || 'off';
+  $('useVision').checked = settings.useVision !== false;
+  $('escalateBelow').value = settings.escalateBelow == null ? 70 : settings.escalateBelow;
   $('showHud').checked = !!settings.showHud;
   $('logHistory').checked = !!settings.logHistory;
   $('debug').checked = !!settings.debug;
@@ -88,7 +90,14 @@ async function refreshClaudeInfo() {
     return;
   }
   note.textContent =
-    r.model + ' · ' + r.keyCount + ' key · đang dùng key #' + r.activeKey + (r.lastError ? ' · lỗi: ' + r.lastError : '');
+    r.model +
+    ' → ' +
+    r.smartModel +
+    ' · ' +
+    r.keyCount +
+    ' key · đang dùng key #' +
+    r.activeKey +
+    (r.lastError ? ' · lỗi: ' + r.lastError : '');
 }
 
 function syncVisibility() {
@@ -286,6 +295,14 @@ function bind() {
       mode === 'auto'
         ? 'Agent sẽ tự bấm đáp án. Chỉ dùng khi ôn tập, không dùng khi thi thật.'
         : 'Chỉ dùng khi ôn tập. Không tự nộp bài.';
+  });
+
+  $('useVision').addEventListener('change', (e) => save({ useVision: e.target.checked }));
+
+  $('escalateBelow').addEventListener('change', (e) => {
+    const v = ECO.clamp(parseInt(e.target.value, 10) || 0, 0, 100);
+    e.target.value = v;
+    save({ escalateBelow: v });
   });
 
   $('btnTestClaude').addEventListener('click', async () => {

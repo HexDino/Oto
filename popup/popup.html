@@ -148,6 +148,22 @@
             <p class="note" id="claudeNote">—</p>
           </div>
 
+          <label class="row">
+            <span class="row-text">
+              <b>Gửi ảnh câu hỏi cho model mạnh</b>
+              <small>Câu có ảnh biển báo sẽ dùng model vision (đắt hơn Haiku).</small>
+            </span>
+            <input type="checkbox" class="sw" id="useVision" />
+          </label>
+
+          <div class="field inline">
+            <label for="escalateBelow">Hỏi lại model mạnh khi tin cậy dưới</label>
+            <div class="unit">
+              <input type="number" id="escalateBelow" min="0" max="100" step="5" />
+              <span>%</span>
+            </div>
+          </div>
+
           <div id="apiBlock" hidden>
             <div class="field">
               <label for="apiBaseUrl">Endpoint</label>

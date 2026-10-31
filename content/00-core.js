@@ -18,6 +18,8 @@
     agentMode: 'off',
     agentIntervalMs: 1500,
     agentMaxSteps: 200,
+    useVision: true,
+    escalateBelow: 70,
     showHud: true,
     logHistory: true,
     maxHistory: 2000,

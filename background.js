@@ -21,6 +21,8 @@ const DEFAULTS = {
   agentMode: 'off',
   agentIntervalMs: 1500,
   agentMaxSteps: 200,
+  useVision: true,
+  escalateBelow: 70,
   showHud: true,
   logHistory: true,
   maxHistory: 2000,
@@ -159,10 +161,11 @@ async function askModel(settings, payload) {
 const CLAUDE_SYSTEM = [
   'Bạn là chuyên gia luật giao thông đường bộ Việt Nam, đang giúp học viên làm câu hỏi trắc nghiệm lý thuyết lái xe.',
   'Bạn nhận được JSON: {"question": "...", "options": ["...", ...]} — options theo đúng thứ tự A, B, C, D.',
+  'Nếu có kèm HÌNH ẢNH, đó là hình minh họa hoặc biển báo của chính câu hỏi: hãy đọc kỹ ký hiệu, màu sắc, hình dạng, số liệu trong ảnh rồi mới chọn.',
   'Chọn đúng một đáp án đúng nhất theo quy định pháp luật hiện hành.',
   'Chỉ trả về JSON hợp lệ, không markdown, không thêm chữ nào ngoài JSON, đúng dạng:',
   '{"answer": <chỉ số 0-based của đáp án đúng>, "confidence": <số 0-100>, "explanation": "<giải thích ngắn, tối đa 160 ký tự, tiếng Việt>"}',
-  'Nếu câu hỏi phụ thuộc hình ảnh/biển báo mà bạn không nhận được hình, đặt confidence <= 40 và nói rõ trong explanation.'
+  'Nếu ảnh mờ hoặc không đủ thông tin để kết luận, đặt confidence <= 40 và nói rõ trong explanation.'
 ].join(' ');
 
 function claudeKeys() {
@@ -172,11 +175,18 @@ function claudeKeys() {
     .filter((k) => k.indexOf('sk-') === 0);
 }
 
+function claudeModel(tier) {
+  const m = CLAUDE.models || {};
+  if (tier === 'smart') return m.smart || m.fast || CLAUDE.model || 'claude-sonnet-5-5';
+  return m.fast || CLAUDE.model || 'claude-haiku-5-5';
+}
+
 function claudeInfo() {
   const keys = claudeKeys();
   return {
     configured: keys.length > 0,
-    model: CLAUDE.model || 'claude-haiku-5-5',
+    model: claudeModel('fast'),
+    smartModel: claudeModel('smart'),
     baseUrl: CLAUDE.baseUrl || 'https://api.anthropic.com',
     keyCount: keys.length,
     activeKey: keys.length ? claudeKeyState.index + 1 : 0,
@@ -197,11 +207,29 @@ function normalizeAnswer(parsed, count) {
   return Number.isInteger(a) && a >= 0 && a < count ? a : -1;
 }
 
-async function callClaude(key, payload) {
+async function callClaude(key, payload, opts) {
+  opts = opts || {};
   const base = String(CLAUDE.baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
-  const model = CLAUDE.model || 'claude-haiku-5-5';
+  const model = claudeModel(opts.tier);
+
+  const content = [];
+  if (opts.image && opts.image.data) {
+    content.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: opts.image.media_type || 'image/jpeg',
+        data: opts.image.data
+      }
+    });
+  }
+  content.push({
+    type: 'text',
+    text: JSON.stringify({ question: payload.question, options: payload.options })
+  });
+
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), 40000);
   try {
     const res = await fetch(base + '/v1/messages', {
       method: 'POST',
@@ -215,10 +243,10 @@ async function callClaude(key, payload) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: Number(CLAUDE.maxTokens) || 400,
+        max_tokens: Number(CLAUDE.maxTokens) || 900,
         // note: `temperature` is deprecated on Haiku 5.5 -> not sent
         system: CLAUDE_SYSTEM,
-        messages: [{ role: 'user', content: JSON.stringify(payload) }]
+        messages: [{ role: 'user', content }]
       })
     });
     const raw = await res.text();
@@ -236,7 +264,8 @@ async function callClaude(key, payload) {
       .join('\n');
     const parsed = parseJsonLoose(text);
     if (!parsed) {
-      return { ok: false, retryable: false, error: 'Model không trả JSON', raw: text.slice(0, 200) };
+      const cut = data.stop_reason === 'max_tokens' ? ' (bị cắt do max_tokens)' : '';
+      return { ok: false, retryable: false, error: 'Model không trả JSON' + cut, raw: text.slice(0, 200) };
     }
     const idx = normalizeAnswer(parsed, (payload.options || []).length);
     if (idx < 0) {
@@ -264,14 +293,14 @@ async function callClaude(key, payload) {
   }
 }
 
-async function claudeAnswer(payload) {
+async function claudeAnswer(payload, opts) {
   const keys = claudeKeys();
   if (!keys.length) return { ok: false, error: 'Chưa có key trong config.local.js' };
 
   let lastErr = '';
   for (let i = 0; i < keys.length; i++) {
     const idx = (claudeKeyState.index + i) % keys.length;
-    const r = await callClaude(keys[idx], payload);
+    const r = await callClaude(keys[idx], payload, opts);
     if (r.ok) {
       claudeKeyState.index = idx;
       claudeKeyState.lastError = '';
@@ -299,7 +328,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: 'Thiếu dữ liệu câu hỏi' });
         return;
       }
-      sendResponse(await claudeAnswer(payload));
+      const tier = msg.tier === 'smart' ? 'smart' : 'fast';
+      let image = null;
+      if (msg.image && msg.image.data && String(msg.image.data).length < 3000000) {
+        image = { media_type: msg.image.media_type || 'image/jpeg', data: msg.image.data };
+      }
+      sendResponse(await claudeAnswer(payload, { tier, image }));
     })();
     return true;
   }

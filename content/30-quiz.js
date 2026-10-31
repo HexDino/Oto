@@ -220,27 +220,69 @@
     });
   };
 
-  Quiz.prototype.resolveSuggestion = function (quiz) {
-    var provider = ECO.settings.provider;
-    return ECO.engine.suggest(quiz.question, quiz.options).then(function (local) {
-      if (provider === 'claude') {
-        return ECO.sendBg({
-          type: 'ECO_LLM_ANSWER',
-          question: quiz.question,
-          options: quiz.options
-        }).then(function (resp) {
-          if (resp && resp.ok && resp.suggestion) {
-            var s = resp.suggestion;
-            if (s.index >= 0 && s.index < quiz.options.length) return s;
-          }
-          if (ECO.hud) {
-            ECO.hud.toast('Claude lỗi: ' + ((resp && resp.error) || 'không rõ') + ' — dùng suy luận cục bộ', 'warn');
-          }
-          return local;
-        });
-      }
+  /**
+   * Ảnh minh họa / biển báo nằm trong khối câu hỏi -> chụp lại bằng canvas.
+   * Trả null nếu không có ảnh hoặc ảnh khác origin (canvas bị taint).
+   */
+  Quiz.prototype.grabImage = function () {
+    var quiz = this.current;
+    if (!quiz) return null;
+    var root = quiz.container || document;
+    var imgs = ECO.dom.queryAll('img', root).filter(function (img) {
+      if (!ECO.dom.isVisible(img)) return false;
+      var r = img.getBoundingClientRect();
+      return r.width >= 100 && r.height >= 70;
+    });
+    if (!imgs.length) return null;
 
-      if (provider !== 'api') return local;
+    imgs.sort(function (a, b) {
+      var ra = a.getBoundingClientRect();
+      var rb = b.getBoundingClientRect();
+      return rb.width * rb.height - ra.width * ra.height;
+    });
+
+    var img = imgs[0];
+    try {
+      var w = img.naturalWidth || img.width || 0;
+      var h = img.naturalHeight || img.height || 0;
+      if (!w || !h) return null;
+      var scale = Math.min(1, 1024 / Math.max(w, h));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      var url = canvas.toDataURL('image/jpeg', 0.85);
+      return {
+        media_type: 'image/jpeg',
+        data: url.split(',')[1],
+        width: canvas.width,
+        height: canvas.height
+      };
+    } catch (e) {
+      ECO.log('không lấy được ảnh (khác origin)', e);
+      return null;
+    }
+  };
+
+  Quiz.prototype.askClaude = function (quiz, tier, image) {
+    return ECO.sendBg({
+      type: 'ECO_LLM_ANSWER',
+      question: quiz.question,
+      options: quiz.options,
+      tier: tier,
+      image: image || null
+    });
+  };
+
+  Quiz.prototype.resolveSuggestion = function (quiz) {
+    var self = this;
+    var provider = ECO.settings.provider;
+    var localFallback = function () {
+      return ECO.engine.suggest(quiz.question, quiz.options);
+    };
+
+    if (provider === 'api') {
       return ECO.sendBg({
         type: 'ECO_API_SUGGEST',
         question: quiz.question,
@@ -253,8 +295,35 @@
         if (ECO.hud) {
           ECO.hud.toast('API lỗi: ' + ((resp && resp.error) || 'không rõ') + ' — dùng suy luận cục bộ', 'warn');
         }
-        return local;
+        return localFallback();
       });
+    }
+
+    if (provider !== 'claude') return localFallback();
+
+    // có ảnh thì đi thẳng model mạnh (vision), không có thì model nhanh
+    var image = ECO.settings.useVision ? this.grabImage() : null;
+    var tier = image ? 'smart' : 'fast';
+    if (image && ECO.hud) ECO.hud.toast('Đã gửi ảnh câu hỏi cho model mạnh');
+
+    return this.askClaude(quiz, tier, image).then(function (resp) {
+      if (!resp || !resp.ok || !resp.suggestion) {
+        if (ECO.hud) {
+          ECO.hud.toast('Claude lỗi: ' + ((resp && resp.error) || 'không rõ') + ' — dùng suy luận cục bộ', 'warn');
+        }
+        return localFallback();
+      }
+
+      var s = resp.suggestion;
+      var threshold = Number(ECO.settings.escalateBelow) || 70;
+      if (tier === 'fast' && s.confidence < threshold) {
+        if (ECO.hud) ECO.hud.toast('Tin cậy thấp (' + s.confidence + '%) — hỏi lại model mạnh');
+        return self.askClaude(quiz, 'smart', image).then(function (r2) {
+          if (r2 && r2.ok && r2.suggestion) return r2.suggestion;
+          return s;
+        });
+      }
+      return s;
     });
   };
 
