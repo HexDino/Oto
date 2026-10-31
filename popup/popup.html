@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>EcoTek Study Agent</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <div class="brand-text">
+          <h1>EcoTek Study Agent</h1>
+          <p id="hostLabel">đang kiểm tra tab…</p>
+        </div>
+      </div>
+      <label class="switch" title="Bật/tắt toàn bộ agent">
+        <input type="checkbox" id="enabled" />
+        <span class="track"></span>
+      </label>
+    </header>
+
+    <section class="status" id="statusCard">
+      <div class="status-row">
+        <span class="label">Đồng hồ</span>
+        <span class="value" id="stTimer">—</span>
+      </div>
+      <div class="status-row">
+        <span class="label">Chuyển bài</span>
+        <span class="value" id="stAdvance">—</span>
+      </div>
+      <div class="status-row">
+        <span class="label">Câu hỏi</span>
+        <span class="value" id="stQuiz">—</span>
+      </div>
+      <div class="status-row">
+        <span class="label">Agent</span>
+        <span class="value" id="stAgent">—</span>
+      </div>
+      <p class="hint" id="hint">Mở trang học để agent hoạt động.</p>
+    </section>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="controls" role="tab">Điều khiển</button>
+      <button class="tab" data-tab="settings" role="tab">Cài đặt</button>
+      <button class="tab" data-tab="history" role="tab">Lịch sử</button>
+    </nav>
+
+    <main>
+      <section class="panel" data-panel="controls">
+        <div class="quiz-panel" id="quizPanel" hidden>
+          <div class="quiz-head">
+            <span class="quiz-label">Câu hỏi đang mở</span>
+            <span class="chip" id="quizSuggest">—</span>
+          </div>
+          <p class="quiz-q" id="quizQuestion"></p>
+          <div class="quiz-opts" id="quizOptions"></div>
+          <input type="text" id="quizAnswer" class="quiz-input" placeholder="Dán câu trả lời của WorkBuddy (vd: B)" />
+          <div class="quiz-actions">
+            <button class="btn small" id="btnCopyQuiz">Copy câu hỏi</button>
+            <button class="btn small" id="btnPickSuggested">Chọn gợi ý</button>
+          </div>
+          <p class="note" id="quizNote"></p>
+        </div>
+
+        <div class="card">
+          <label class="row">
+            <span class="row-text">
+              <b>Tự động chuyển bài</b>
+              <small>Hết giờ đếm ngược → bấm nút chuyển bài (xử lý cả popup xác nhận).</small>
+            </span>
+            <input type="checkbox" class="sw" id="autoAdvance" />
+          </label>
+
+          <div class="field inline">
+            <label for="bufferSeconds">Thời gian đệm trước khi chuyển</label>
+            <div class="unit">
+              <input type="number" id="bufferSeconds" min="0" max="60" step="1" />
+              <span>giây</span>
+            </div>
+          </div>
+
+          <label class="row">
+            <span class="row-text">
+              <b>Gợi ý đáp án</b>
+              <small>Đọc câu hỏi + đáp án, tô sáng lựa chọn kèm độ tin cậy.</small>
+            </span>
+            <input type="checkbox" class="sw" id="quizAssist" />
+          </label>
+
+          <label class="row">
+            <span class="row-text">
+              <b>Tự động chọn đáp án</b>
+              <small>Chỉ chọn khi độ tin cậy ≥ ngưỡng. Mặc định tắt.</small>
+            </span>
+            <input type="checkbox" class="sw" id="autoSelect" />
+          </label>
+
+          <div class="field">
+            <label for="agentMode">Agent tự trả lời (Claude Haiku 5.5)</label>
+            <select id="agentMode">
+              <option value="off">Tắt</option>
+              <option value="assist">Chỉ gợi ý, không bấm</option>
+              <option value="auto">Tự chọn đáp án</option>
+            </select>
+            <small class="note" id="agentNote">Chỉ dùng khi ôn tập. Không tự nộp bài.</small>
+          </div>
+
+          <div class="field" id="thresholdField">
+            <label for="autoSelectThreshold">
+              Ngưỡng tự chọn: <b id="thresholdValue">80</b>%
+            </label>
+            <input type="range" id="autoSelectThreshold" min="50" max="100" step="5" />
+          </div>
+
+          <label class="row">
+            <span class="row-text">
+              <b>Bảng nổi trên trang</b>
+              <small>Hiện trạng thái + nút chuyển bài ở góc phải dưới.</small>
+            </span>
+            <input type="checkbox" class="sw" id="showHud" />
+          </label>
+
+          <div class="actions">
+            <button class="btn primary" id="btnAdvance">Chuyển bài ngay</button>
+            <button class="btn" id="btnScan">Quét trang</button>
+          </div>
+        </div>
+
+        <pre class="scan" id="scanOut" hidden></pre>
+      </section>
+
+      <section class="panel" data-panel="settings" hidden>
+        <div class="card">
+          <div class="field">
+            <label for="provider">Nguồn gợi ý</label>
+            <select id="provider">
+              <option value="local">Cục bộ (heuristic + kho đã học)</option>
+              <option value="claude">Claude Haiku 5.5 (key trong config.local.js)</option>
+              <option value="api">API LLM (OpenAI-compatible)</option>
+            </select>
+            <small class="note">Cục bộ không gửi dữ liệu ra ngoài. Chọn API chỉ khi bạn tự cấu hình endpoint.</small>
+          </div>
+
+          <div class="field">
+            <label>Kiểm tra Claude</label>
+            <button class="btn small" id="btnTestClaude">Test Claude</button>
+            <p class="note" id="claudeNote">—</p>
+          </div>
+
+          <div id="apiBlock" hidden>
+            <div class="field">
+              <label for="apiBaseUrl">Endpoint</label>
+              <input type="text" id="apiBaseUrl" placeholder="https://api.example.com/v1" />
+            </div>
+            <div class="field">
+              <label for="apiModel">Model</label>
+              <input type="text" id="apiModel" placeholder="gpt-4o-mini" />
+            </div>
+            <div class="field">
+              <label for="apiKey">API key</label>
+              <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="apiHeaders">Header phụ (JSON, tùy chọn)</label>
+              <input type="text" id="apiHeaders" placeholder='{"x-api-key":"..."}' />
+            </div>
+            <button class="btn" id="btnSaveApi">Lưu &amp; cấp quyền truy cập API</button>
+            <p class="note" id="apiNote"></p>
+          </div>
+
+          <hr />
+
+          <div class="field">
+            <label for="selNext">Selector nút chuyển bài (tùy chọn)</label>
+            <input type="text" id="selNext" placeholder="a.next-slide" />
+          </div>
+          <div class="field">
+            <label for="selTimer">Selector đồng hồ (tùy chọn)</label>
+            <input type="text" id="selTimer" placeholder=".countdown" />
+          </div>
+          <div class="field">
+            <label for="selQuestion">Selector câu hỏi (tùy chọn)</label>
+            <input type="text" id="selQuestion" placeholder=".question-title" />
+          </div>
+          <div class="field">
+            <label for="selAnswers">Selector đáp án (tùy chọn)</label>
+            <input type="text" id="selAnswers" placeholder=".answer-item" />
+          </div>
+
+          <label class="row">
+            <span class="row-text"><b>Ghi log lịch sử</b><small>Lưu câu hỏi + đáp án đã gợi ý để ôn tập.</small></span>
+            <input type="checkbox" class="sw" id="logHistory" />
+          </label>
+
+          <label class="row">
+            <span class="row-text"><b>Debug log</b><small>In chi tiết ra console của trang.</small></span>
+            <input type="checkbox" class="sw" id="debug" />
+          </label>
+
+          <button class="btn danger" id="btnReset">Khôi phục mặc định</button>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="history" hidden>
+        <div class="hist-head">
+          <span id="histCount">0 câu</span>
+          <div class="hist-actions">
+            <button class="btn small" id="btnExportJson">JSON</button>
+            <button class="btn small" id="btnExportCsv">CSV</button>
+            <button class="btn small danger" id="btnClear">Xóa</button>
+          </div>
+        </div>
+        <div class="hist-list" id="histList"></div>
+      </section>
+    </main>
+
+    <script src="../content/00-core.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+/* Highlight for the suggested answer. Kept minimal so it cannot break page layout. */
+.eco-suggest {
+  box-shadow: inset 4px 0 0 0 #16a34a, 0 0 0 2px rgba(22, 163, 74, 0.45) !important;
+  background-color: rgba(22, 163, 74, 0.09) !important;
+  border-radius: 6px !important;
+}
+
+.eco-suggest input[type='radio'],
+.eco-suggest input[type='checkbox'] {
+  outline: 2px solid #16a34a !important;
+  outline-offset: 1px !important;
+}
+
+.eco-suggest::selection {
+  background: rgba(22, 163, 74, 0.25);
+}

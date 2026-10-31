@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "EcoTek Study Agent",
+  "version": "1.0.0",
+  "description": "Tro ly hoc lai xe: tu dong chuyen bai khi het gio va goi y dap an trac nghiem (chi chay tren hoclythuyetlaixe.eco-tek.com.vn).",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "activeTab", "scripting", "notifications"],
+  "host_permissions": [
+    "https://hoclythuyetlaixe.eco-tek.com.vn/*",
+    "https://api.anthropic.com/*"
+  ],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "EcoTek Study Agent",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://hoclythuyetlaixe.eco-tek.com.vn/*"],
+      "js": ["content/01-inject.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://hoclythuyetlaixe.eco-tek.com.vn/*"],
+      "js": [
+        "content/00-core.js",
+        "content/10-dom.js",
+        "lib/answer-engine.js",
+        "content/20-timer.js",
+        "content/30-quiz.js",
+        "content/40-hud.js",
+        "content/45-presence.js",
+        "content/50-agent.js",
+        "content/99-main.js"
+      ],
+      "css": ["content/agent.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
